@@ -1,0 +1,30 @@
+{
+  "name": "blog-src",
+  "version": "1.0.0",
+  "description": "记录学习，以备查询",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vuepress dev",
+    "build": "vuepress build docs/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zeroing-one/blog.git"
+  },
+  "keywords": [
+    "blog"
+  ],
+  "author": "SimonZhang",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zeroing-one/blog/issues"
+  },
+  "homepage": "https://github.com/zeroing-one/blog#readme",
+  "devDependencies": {
+    "vuepress": "^0.14.9"
+  }
+}

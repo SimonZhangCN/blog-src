@@ -1,5 +1,6 @@
 module.exports = {
     title: "Simon's Blog",
+    base: "/blog-src/dist/",
     themeConfig: {
         nav: [
             {

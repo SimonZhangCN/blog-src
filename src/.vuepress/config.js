@@ -61,7 +61,11 @@ module.exports = {
             ],
             '/elasticsearch/': [''],
             '/swoole/': [''],
-            '/nginx/': [''], 
+            '/nginx/': [
+                '',
+                'architecture',
+                'http',
+            ], 
             '/': ['']
         }
     }

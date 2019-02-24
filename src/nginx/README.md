@@ -25,7 +25,6 @@
 2. 配置文件nginx.conf：配置文件控制着ngixn的行为
 3. 访问日志access.log：记录每个http请求的访问记录
 4. 错误日志error.log：当请求异常时会将错误信息写入错误日志，便于排查问题
----5. 
 
 ## nginx的发行版本选择
 1. [开源版nginx](http://nginx.org/)：开源免费
@@ -304,6 +303,3 @@ log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
 access_log logs/access.log main;
 error_log logs/error.log error;
 ```
-
-## 具备缓存功能的反向代理服务
-

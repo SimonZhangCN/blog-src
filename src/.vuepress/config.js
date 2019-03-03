@@ -15,18 +15,18 @@ module.exports = {
             {
                 text: '后端',
                 items: [
-                    {
-                        text: 'mysql',
-                        link: '/mysql/'
-                    },
+                    // {
+                    //     text: 'mysql',
+                    //     link: '/mysql/'
+                    // },
                     {
                         text: 'elasticsearch',
                         link: '/elasticsearch/'
                     },
-                    {
-                        text: 'redis',
-                        link: '/redis/'
-                    },
+                    // {
+                    //     text: 'redis',
+                    //     link: '/redis/'
+                    // },
                     {
                         text: 'nginx',
                         link: '/nginx/'

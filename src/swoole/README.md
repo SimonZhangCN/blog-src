@@ -70,29 +70,177 @@ php http-server.php
 接下来使用swoole来实现一个简单的聊天功能
 
 ## websocket_server
-编写中
+这节，来做一个简单的聊天功能，websocket服务端代码如下
+``` php
+$host = "swoole-demo.com";
+$port = 9501;
+$ws_server = new Swoole\WebSocket\Server($host, $port);
 
-## server详解
-编写中
+// server有一个属性connections记录了所有的连接，当然也包括通过http请求的连接
+// 为了避免向向不是websocket的连接发送信息，
+// 所以这里使用一个数组存放=那些websoket的连接
+$fd_table = new swoole_table(1024);
+$fd_table->column('name', \Swoole\Table::TYPE_STRING, 20);
+$fd_table->create();
+
+$msg_table = new swoole_table(1024);
+$msg_table->column('fd', \Swoole\Table::TYPE_INT);
+$msg_table->column('name', \Swoole\Table::TYPE_STRING, 20);
+$msg_table->column('message', \Swoole\Table::TYPE_STRING, 200);
+$msg_table->create();
+
+// 监听了request事件用于处理http请求，设置根目录让其能访问到index.html
+$ws_server->set([
+    'document_root' => '/Users/simon/Study/backEnd/swoole-demo',
+    'enable_static_handler' => true,
+]);
 
 
-## swoole的进程模型
-swoole启动一个Server后，会存在三类进程
-1. Master
-2. Manager
-3. worker/taskWorker
+// 1.客户端和服务端建立连接握手成功后会回调此函数，
+// 2.swoole内置了握手，如需自己实现握手可通过绑定handshake事件回调函数，
+// 3.自行实现握手后，将不会自动触发open事件
+// 4.open和handshake都是可选的
+$ws_server->on('open', function (Swoole\WebSocket\Server $server, $request) use($fd_table, $msg_table) {
+    // 客户端连接到服务器并完成握手的回调处理函数
+    $cur_fd = $request->fd;
+    $name = '用户' . $cur_fd;
+    // 通知所有用户，有新用户进入聊天室了
+    foreach ($fd_table as $fd => $row) {
+        $server->push($fd, $name . '进入聊天室了');
+    }
+    // 将建立连接的用户记录到内存表中
+    $fd_table->set($cur_fd, [
+        'name' => $name
+    ]);
+    echo '当前连接的客户端总数'. $fd_table->count(). PHP_EOL;
+    // 最多发送10条聊天记录过去
+    if ($msg_table->count() > 0) {
+        $all_msg = [];
+        foreach ($msg_table as $row) {
+            $all_msg[] = $row;
+        }
+        $offset = $msg_table->count() >= 10 ? $msg_table->count() - 10 : 0;
+        $data = array_slice($all_msg, $offset, 10);
+        $server->push($cur_fd, json_encode($data));
+    }
+});
 
-### Master进程
-是一个多线程程序，包括主线程和Reactor
-1. 主线程主要是Accept操作和信号处理
-2. Reactor线程负责处理TCP连接、网络IO和收发数据等
+// message事件回调必须要设置，open和handshake可以不设置
+// message事件用于处理客户端主动发送过来的消息
+$ws_server->on('message', function (Swoole\WebSocket\Server $server, $frame) use($fd_table, $msg_table) {
+    // 向除自己以外的用户发送信息
+    $cur_fd = $frame->fd;
+    $name = $fd_table->get($cur_fd)['name'];
+    $msg = "{$name}：{$frame->data}";
+    // 将信息写入到表中
+    $msg_table->set(time(), [
+        'fd' => $cur_fd,
+        'name' => $name,
+        'message' => $msg
+    ]);
+    foreach ($fd_table as $fd => $val) {
+        if ($fd != $cur_fd) {
+            $server->push($fd, $msg);
+        }
+    }
+});
 
-### Manager进程
-专门负责worker/task进程的fork操作和管理, manager的任务本来可以由master进程来负责，对于多线程的Master进程而言，想要多Worker进程就必须fork操作，但是fork操作是不安全的. 所以Manager进程就是为了保证Master进程的稳定.
 
-通常，worker进程被误杀或者由于程序的原因会异常退出，Manager进程为了保证服务的稳定性，会重新拉起新的worker进程
+// 客户端断开连接时的处理事件
+// ws和http连接底层都会占用一个tcp连接，所以http类请求会在客户端一定时间内没使用时自动断开
+// 下面只对ws的连接断开进行对在线用户的通知
+$ws_server->on('close', function ($ser, $cur_fd) use($fd_table)  {
+    // 删除断开连接客户端
+    $name = $fd_table->get($cur_fd)['name'];
+    if (!empty($name)) {
+        $fd_table->del($cur_fd);
+        foreach ($fd_table as $fd => $val) {
+            $ser->push($fd, $name.'离开了聊天室');
+        }
+    }
+});
 
-### worker/taskWorker进程
-worker进程：负责具体的业务代码
+// request事件回调函数
+$ws_server->on('request', function ($request, $response) use($fd_table, $ws_server) {
+    // ws-server继承自https-server，开启服务同时，设置了request的事件回调，即可接收http请求并处理
+    // 可以通过手动发送一个http请求，根据请求来向所有连接的ws客户端主动推送消息
+    if ($request->server['path_info'] == '/broadcast') {
+        foreach ($fd_table as $fd => $val) {
+            $ws_server->push($fd, '广播消息');
+        }
+        $response->end('broadcast success');
+    }
+});
 
-task进程：负责处理时间比较久的任务
+$ws_server->start();
+```
+保存文件为ws-server.php，使用`php ws-server.php启动server`，这里我们使用浏览器提供的[websocket API](https://developer.mozilla.org/zh-CN/docs/Web/API/WebSocket)，来模拟websoket客户端。在ws-server.php同级目录新建一个index.html文件，为了简单，前端对于消息处理通过弹窗方式
+``` html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>swoole-chat</title>
+</head>
+<body>
+<div>
+    <h1>chat-demo</h1>
+    <input type="text" id="msg">
+    <button id="submit">发送</button>
+</div>
+<script>
+    let url = 'ws://swoole-demo.com:9501'
+    let ws = new WebSocket(url)
+
+    // 建立连接成功后的回调函数
+    ws.onopen = function (event) {
+        console.log('和服务器建立连接了', event)
+    }
+
+    // 连接失败的回调函数
+    ws.onerror = function (event) {
+        console.log('连接服务器失败了', event)
+    }
+
+
+    // 接收到服务端发送过来的消息回调事件
+    ws.onmessage = function (event) {
+        console.log('接收到服务端的信息', event)
+        alert(event.data)
+    }
+
+    // 向服务器主动发送信息
+    // ws.send(Math.random() * 1000)
+    document.getElementById('submit').addEventListener('click', function () {
+        let msg = document.getElementById('msg').value
+        console.log('向服务器发送了' + msg)
+        ws.send(msg)
+    })
+
+    // 连接关闭后的回调处理函数
+    ws.onclose = function (event) {
+        console.log('和服务器断开连接了',event)
+    }
+
+    // ws.close(主动关闭和服务端的连接)
+</script>
+</body>
+</html>
+```
+服务端实现要点：
+
+1. open事件的回调处理
+- 通知已连接的用户，有新用户进入聊天室了
+- 将每一个新连接的用户记录到内存表（内存表暂不做介绍，把他理解成mysql的表）
+- 新连接的用户会收到服务端发送过去的最多10条信息
+2. message事件的回调处理
+- 接收用户发送过来的消息，并写入到内存表
+- 将发送过来的信息发给每一个建立连接的用户（不包括发送这条信息的用户）
+3. onclose事件回调处理
+- 将断开连接的用户从内存表中删除
+- 通知已建立连接的用户，哪个用户离开了聊天室
+4. request事件回调处理
+- 使用`server->set`设置了静态文件目录，静态文件目录找不到的请求会被request事件回调处理
+- 对/broadcast请求，向建立连接的用户发送广播消息
+
+到此，一个聊天室的基本功能就完成了。

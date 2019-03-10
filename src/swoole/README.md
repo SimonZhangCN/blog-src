@@ -70,26 +70,29 @@ php http-server.php
 接下来使用swoole来实现一个简单的聊天功能
 
 ## websocket_server
-这节，来做一个简单的聊天功能，websocket服务端代码如下
+这节，来做一个简单的聊天功能，服务端和客户端之间通信基于[websocket协议](https://www.kancloud.cn/kancloud/websocket-protocol/56235)，不了解此协议，请移步上面链接了解，websocket服务端代码如下
 ``` php
 $host = "swoole-demo.com";
 $port = 9501;
 $ws_server = new Swoole\WebSocket\Server($host, $port);
 
 // server有一个属性connections记录了所有的连接，当然也包括通过http请求的连接
-// 为了避免向向不是websocket的连接发送信息，
-// 所以这里使用一个数组存放=那些websoket的连接
+// 为了避免向不是websocket的连接发送信息，
+// 所以这里使用了swoole的内存表记录所有websocket客户端连接
+// 表中只有一列name字段
 $fd_table = new swoole_table(1024);
 $fd_table->column('name', \Swoole\Table::TYPE_STRING, 20);
 $fd_table->create();
 
+// 使用内存表记录用户发送的信息
+// 存在三列字段fd,name,message
 $msg_table = new swoole_table(1024);
 $msg_table->column('fd', \Swoole\Table::TYPE_INT);
 $msg_table->column('name', \Swoole\Table::TYPE_STRING, 20);
 $msg_table->column('message', \Swoole\Table::TYPE_STRING, 200);
 $msg_table->create();
 
-// 监听了request事件用于处理http请求，设置根目录让其能访问到index.html
+// 监听了request事件用于处理http请求，设置根目录让用户能访问到index.html
 $ws_server->set([
     'document_root' => '/Users/simon/Study/backEnd/swoole-demo',
     'enable_static_handler' => true,
@@ -125,19 +128,28 @@ $ws_server->on('open', function (Swoole\WebSocket\Server $server, $request) use(
     }
 });
 
-// message事件回调必须要设置，open和handshake可以不设置
+// message事件回调必须要设置,否则启动server的时候会失败，open和handshake可以不设置
 // message事件用于处理客户端主动发送过来的消息
-$ws_server->on('message', function (Swoole\WebSocket\Server $server, $frame) use($fd_table, $msg_table) {
+$ws_server->on('messagess', function (Swoole\WebSocket\Server $server, $frame) use($ws_server, $fd_table, $msg_table) {
     // 向除自己以外的用户发送信息
     $cur_fd = $frame->fd;
+    $client_msg = $frame->data;
     $name = $fd_table->get($cur_fd)['name'];
-    $msg = "{$name}：{$frame->data}";
-    // 将信息写入到表中
-    $msg_table->set(time(), [
-        'fd' => $cur_fd,
-        'name' => $name,
-        'message' => $msg
-    ]);
+    $msg = "{$name}：{$client_msg}";
+    // 模拟用户发送不雅内容时，将用户踢出聊天室
+    if ($client_msg == 'fuck') {
+        $ws_server->disconnect($cur_fd, 1000, '发送不雅信息，已被赶出聊天室');
+        $fd_table->del($cur_fd);
+        $msg = $name . '被移除出聊天室';
+    } else {
+        // 将信息写入到表中
+        $msg_table->set(time(), [
+            'fd' => $cur_fd,
+            'name' => $name,
+            'message' => $msg
+        ]);
+    }
+    // 向所有用户（不包括自己）发送消息
     foreach ($fd_table as $fd => $val) {
         if ($fd != $cur_fd) {
             $server->push($fd, $msg);
@@ -147,16 +159,19 @@ $ws_server->on('message', function (Swoole\WebSocket\Server $server, $frame) use
 
 
 // 客户端断开连接时的处理事件
-// ws和http连接底层都会占用一个tcp连接，所以http类请求会在客户端一定时间内没使用时自动断开
+// ws和http连接底层都会占用一个tcp连接，所以http类请求会在客户端一定时间内没使用时自动断开，也会触发close事件
 // 下面只对ws的连接断开进行对在线用户的通知
-$ws_server->on('close', function ($ser, $cur_fd) use($fd_table)  {
-    // 删除断开连接客户端
-    $name = $fd_table->get($cur_fd)['name'];
-    if (!empty($name)) {
+$ws_server->on('close', function ($ser, $cur_fd) use($ws_server, $fd_table)  {
+    // 判断是否是websocket客户端断开连接
+    if ($ws_server->isEstablished($cur_fd)) {
+        // 删除断开连接客户端
+        $name = $fd_table->get($cur_fd)['name'];
         $fd_table->del($cur_fd);
         foreach ($fd_table as $fd => $val) {
             $ser->push($fd, $name.'离开了聊天室');
         }
+    } else {
+        echo '非webwocket客户端断开连接'.PHP_EOL;
     }
 });
 
@@ -236,11 +251,15 @@ $ws_server->start();
 2. message事件的回调处理
 - 接收用户发送过来的消息，并写入到内存表
 - 将发送过来的信息发给每一个建立连接的用户（不包括发送这条信息的用户）
+- 主动将发布不雅内容的用户踢出聊天室
 3. onclose事件回调处理
 - 将断开连接的用户从内存表中删除
 - 通知已建立连接的用户，哪个用户离开了聊天室
 4. request事件回调处理
 - 使用`server->set`设置了静态文件目录，静态文件目录找不到的请求会被request事件回调处理
-- 对/broadcast请求，向建立连接的用户发送广播消息
+- 对/broadcast请求，向建立连接的用户发送广播消息掉
+5. ws-server提供几个重要功能函数，详细使用请自行查看官方文档
+- disconnect方法：服务端主动关闭掉客户端的连接
+- isEstablished：检查连接是否为websocket
 
-到此，一个聊天室的基本功能就完成了。
+到此，一个聊天室的基本功能demo就完成了。

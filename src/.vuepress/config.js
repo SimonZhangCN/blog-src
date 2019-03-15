@@ -60,7 +60,10 @@ module.exports = {
                 'logSystem'
             ],
             '/elasticsearch/': [''],
-            '/swoole/': [''],
+            '/swoole/': [
+                '',
+                'server'
+            ],
             '/nginx/': [
                 '',
                 'architecture',

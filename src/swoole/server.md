@@ -255,31 +255,33 @@ string(11) "task finish"，这行信息会延迟3秒打印，使用sleep(3)来�
 ## server启动配置项
 官方文档中的配置项，大概有以下几类，这里只做大概介绍，细节请移步[官方文档](https://wiki.swoole.com/wiki/page/274.html)
 1. 进程数和最大连接数相关配置
-- reactor-num：
-- worker_num：
-- max_request：
-- max_conn：
-- task_worker_num：
-- task_max_request：
-- task_tmpdir：
+- reactor-num：主进程内事件处理线程的数量，充分利用cpu资源，默认会和CPU核数一样
+- worker_num：启动的worker进程数
+- max_request：worker进程的最大任务数，主要作用是解决php进程内存溢出问题
+- max_conn：最大允许维持多少个TCP连接
+- task_worker_num：耗时任务taskWoker进程的个数
+- task_max_request：taskWorker进程的最大任务数，同max_request作用一样
+- task_tmpdir：投递任务时传递数据超过8180自己的，将会是用临时文件来存储数据，这个是设置临时文件的存放目录
 2. worker进程和taskWorker进程通信模式相关配置
-- task_ipc_mode：
-- message_queue_key：
+- task_ipc_mode：worker和taskWorker进程通信方式，默认是使用unix socket通信
+- message_queue_key：task_ipc_mode使用消息队列的方式，那么需要通过这个来设置消息队列的key值
 3. 工作进程安全性相关
-- user
-- group
-- chroot
+具体的业务逻辑都是通过worker和taskWorker进程来处理的，如果代码存在漏洞，服务器的安全性就会降低，linux系统通过用户和用户组来控制权限，存在代码漏洞的情况下，也不至于服务器很容易被攻破
+- user：设置worker和taskWorker进程所属用户
+- group：设置worker和taskWorker进程所属用户组
+- chroot：设置worker/taskWorker进程的根目录，作用是隔离操作系统其它的目录
 4. cpu亲和性设置
-- open_cpu_affinity
-- cpu_affinity_ignore
+- open_cpu_affinity：启用CPU亲和性设置，此特性会将swoole的reactor线程/worker进程绑定到固定的一个核上。可以避免进程/线程的运行时在多个核之间互相切换
+- cpu_affinity_ignore：用于设置不占用哪些CPU
 5. 日志文件等的配置
-- daemonize
-- reload_async
-- pid_file
-- log_file
-- log_level
+- daemonize：让服务以守护进程的方式启动
+- reload_async：设置异步重启，启用次特性，worker进程会等待异步事件完成后再重启进程
+- pid_file：server启动时会将master进程的pid写入到此文件
+- log_file：设置运行期间的错误日志文件
+- log_level：设置什么等级的错误会被抛出
 - request_slowlog_file
 6. ssl隧道加密相关
+当通信协议需要使用https、wss时，需要通过下面这些来设置证书。通常生产环境，证书的设置都会放在nginx来管理，nginx再把请求代理到上游服务器
 - ssl_cert_file
 - ssl_key_file
 - ssl_method
@@ -288,16 +290,21 @@ string(11) "task finish"，这行信息会延迟3秒打印，使用sleep(3)来�
 - ssl_client_cert_file
 - ssl_allow_self_signed
 7. 协程相关配置
-- enable_coroutine
-- max_coroutine
-- task_enable_coroutine
+- enable_coroutine：是否开启事件回调中自动创建协程，影响的事件回调请看官方文档
+- max_coroutine：设置当前worker进程能创建的最大协程数量
+- task_enable_coroutine：设置当前taskWorker进程能创建的最大协程数量，这个特性在V4.2.12版本才支持
+
+swoole也可以使用代码的方式来创建协程，这样灵活性相对于配置的方式会更好，我只需要在我需要用到协程的地方用代码开启
 8. 协议相关配置
+之前入门篇内容的http-server、ws-server，启动服务式，onStart事件回调中将`$server->setting`打印出来，就可以看到，没通过set方法设置配置项，但是会打印出很多配置项，其中就有下面这些配置项，可以自行去修改之前的入门篇的server代码，将配置项打印出来查看
 - open_http_protocol
 - open_http2_protocol
 - open_websocket_protocol
 - open_mqtt_protocol
 - open_websocket_close_frame
 
-其它没有提到的都是一些和TCP底层相关配置项，这块内容讲起来需要很多前置知识，暂不做介绍
+其它没有提到的都是一些和TCP底层相关配置项，这块内容讲起来需要很多前置知识，对于web开发来说基本也用不上，这里就不做介绍，需要了解请自行查看官方文档
 
+总结：
 
+Server篇以多线程+多进程的架构为主线，结合事件回调和启动前的配置项，来理解server启动背后发生了什么。官方文档还详细介绍了server的属性和方法，这些内容请移步文档中查看。

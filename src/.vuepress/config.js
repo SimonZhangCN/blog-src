@@ -62,7 +62,8 @@ module.exports = {
             '/elasticsearch/': [''],
             '/swoole/': [
                 '',
-                'server'
+                'server',
+                'phpLife',
             ],
             '/nginx/': [
                 '',
